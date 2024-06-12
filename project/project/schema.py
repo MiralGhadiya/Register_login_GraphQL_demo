@@ -17,22 +17,26 @@ import graphql_jwt
 class UserType(DjangoObjectType):
     class Meta:
         model = CustomUser
-        fields = ("id", "username", "email")
+        fields = ("id", "username", "email","created_at")
 
 class RegisterUser(graphene.Mutation):
     class Arguments:
         username = graphene.String(required=True)
         email = graphene.String(required=True)
         password = graphene.String(required=True)
+        createdAt=graphene.DateTime(required=True)
+        
 
     user = graphene.Field(UserType)
     token = graphene.String()
 
-    def mutate(self, info, username, email, password):
+    def mutate(self, info, username, email, password,createdAt):
         user = CustomUser(username=username, email=email)
         user.set_password(password)
+        user.created_at = createdAt
         user.save()
         token = get_token(user)
+        
         return RegisterUser(user=user, token=token)
 
 class LoginUser(graphene.Mutation):
