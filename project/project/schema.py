@@ -1,3 +1,4 @@
+import datetime
 import graphene
 from graphene_django import DjangoObjectType
 from app.models import CustomUser
@@ -12,6 +13,8 @@ from django.contrib.auth.tokens import default_token_generator
 # from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from .utils import send_otp_email, verify_otp,generate_otp
 import graphql_jwt
+from django.utils import timezone
+from datetime import timedelta
 # from django.contrib.auth import logout
 
 class UserType(DjangoObjectType):
@@ -31,10 +34,14 @@ class RegisterUser(graphene.Mutation):
     token = graphene.String()
 
     def mutate(self, info, username, email, password,createdAt):
+        if not username or not email:
+            raise GraphQLError('Username and email are required.')
+        if CustomUser.objects.filter(username=username).exists():
+            raise GraphQLError('Username already exists')
         user = CustomUser(username=username, email=email)
         user.set_password(password)
         user.created_at = createdAt
-        user.save()
+        user.save()  
         token = get_token(user)
         
         return RegisterUser(user=user, token=token)
@@ -43,6 +50,7 @@ class LoginUser(graphene.Mutation):
     class Arguments:
         email = graphene.String(required=True)
         password = graphene.String(required=True)
+
 
     user = graphene.Field(UserType)
     token = graphene.String()
@@ -155,11 +163,29 @@ class Mutation(graphene.ObjectType):
 
 class Query(graphene.ObjectType):
     me = graphene.Field(UserType)
+    users = graphene.List(UserType, search=graphene.String(required=True))
 
-    def resolve_me(self, info): 
+    def resolve_me(self, info):
         user = info.context.user
         if user.is_anonymous:
             raise GraphQLError('Not logged in')
         return user
+
+    def resolve_users(self, info, search):
+        now = timezone.now()
+        today = now.date()
+        if search == 'today':
+            return CustomUser.objects.filter(created_at__date=today)
+        elif search == 'last_week':
+            last_week = today - timedelta(days=7)
+            return CustomUser.objects.filter(created_at__date__gte=last_week, created_at__date__lte=today)
+        elif search == 'last_month':
+            last_month = today - timedelta(days=30)
+            return CustomUser.objects.filter(created_at__date__gte=last_month, created_at__date__lte=today)
+        elif search == 'last_year':
+            last_year = today - timedelta(days=365)
+            return CustomUser.objects.filter(created_at__date__gte=last_year, created_at__date__lte=today)
+        else:
+            raise GraphQLError('Invalid time frame specified')
 
 schema = graphene.Schema(query=Query, mutation=Mutation)
